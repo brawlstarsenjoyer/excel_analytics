@@ -165,9 +165,8 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.mime_type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_document))
+    app.add_handler(MessageHandler(filters.Document.MimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_document))
     app.add_handler(MessageHandler(filters.Document.FileExtension("xlsx"), handle_document))
-
     print("✅ Бот запущен и ожидает сообщения...")
     app.run_polling()
 
@@ -175,4 +174,5 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
