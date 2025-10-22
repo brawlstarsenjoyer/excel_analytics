@@ -51,20 +51,13 @@ PRIORITY_DRINKS_LOWER = {name.lower().strip() for name in PRIORITY_DRINKS}
 
 
 def is_authorized(user_id: int) -> bool:
-    """Проверяет, разрешён ли пользователь."""
     return not AUTHORIZED_USER_IDS or user_id in AUTHORIZED_USER_IDS
 
 
 def analyze_excel(file_path: str) -> tuple[str, str, pd.DataFrame]:
-    """
-    Анализирует Excel-файл и возвращает:
-    - дату отчёта (str)
-    - текстовый отчёт (str)
-    - датафрейм для сохранения (pd.DataFrame)
-    """
     df_raw = pd.read_excel(file_path, header=None)
 
-    # Найти строку с заголовками
+    # Найти заголовки
     header_row = None
     for i in range(len(df_raw)):
         if "Denumire marfa" in df_raw.iloc[i].values:
@@ -73,12 +66,11 @@ def analyze_excel(file_path: str) -> tuple[str, str, pd.DataFrame]:
     if header_row is None:
         raise ValueError("❌ Не найдены заголовки. Убедитесь, что файл — отчёт кассы.")
 
-    # Установить заголовки
     df = df_raw.iloc[header_row:].copy()
     df.columns = df.iloc[0]
     df = df[1:].reset_index(drop=True)
 
-    # Извлечь дату из столбца 'Data'
+    # Дата из столбца 'Data'
     report_date = "неизвестна"
     if 'Data' in df.columns:
         non_empty = df['Data'].dropna()
@@ -88,47 +80,45 @@ def analyze_excel(file_path: str) -> tuple[str, str, pd.DataFrame]:
             except Exception:
                 report_date = str(non_empty.iloc[0]).strip()
 
-    # Проверка наличия нужных столбцов
-    required_cols = ["Denumire marfa", "Cantitate", "Suma cu TVA fără reducere"]
-    if not all(col in df.columns for col in required_cols):
+    # Проверка столбцов
+    required = ["Denumire marfa", "Cantitate", "Suma cu TVA fără reducere"]
+    if not all(col in df.columns for col in required):
         raise ValueError("❌ Отсутствуют необходимые столбцы.")
 
-    df = df[required_cols].copy()
+    df = df[required].copy()
     df = df.dropna(subset=["Denumire marfa"])
     df = df[~df["Denumire marfa"].str.contains("Punga", na=False)]
 
-    # Определить приоритетные напитки
+    # Приоритетные напитки
     df['is_priority'] = df['Denumire marfa'].str.lower().str.strip().isin(PRIORITY_DRINKS_LOWER)
 
-    # Агрегация
     result = df.groupby("Denumire marfa").agg(
         Количество=("Cantitate", "sum"),
         Сумма=("Suma cu TVA fără reducere", "sum"),
         is_priority=("is_priority", "any")
     ).round(2)
 
-    # Сортировка: сначала приоритетные, по убыванию суммы
     result = result.sort_values(['is_priority', 'Сумма'], ascending=[False, False])
     result_for_save = result.drop(columns=['is_priority'])
 
-    # Текстовый отчёт (макс. 30 строк)
-    top_rows = result_for_save.head(30)
+    # === ФОРМИРУЕМ ПОЛНЫЙ ТЕКСТОВЫЙ ОТЧЁТ (все позиции!) ===
     text = f"📅 Дата отчёта: {report_date}\n\n📊 Отчёт по продажам:\n\n"
-    text += top_rows.to_string()
-
-    if len(result_for_save) > 30:
-        text += f"\n\n... и ещё {len(result_for_save) - 30} позиций. Полный отчёт — в файле."
+    text += result_for_save.to_string(
+        index=True,
+        justify='left',
+        max_rows=None,
+        max_cols=None,
+        line_width=1000
+    )
 
     return report_date, text, result_for_save
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id):
-        await update.message.reply_text("❌ У вас нет доступа к этому боту.")
+        await update.message.reply_text("❌ У вас нет доступа.")
         return
-    await update.message.reply_text(
-        "Привет! Отправьте Excel-файл с кассовым отчётом (.xlsx), и я пришлю анализ."
-    )
+    await update.message.reply_text("Привет! Отправьте .xlsx файл с отчётом.")
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,56 +133,49 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        await update.message.reply_text("📥 Получаю и обрабатываю файл...")
+        await update.message.reply_text("📥 Обрабатываю файл...")
 
-        # Скачать файл
         file = await context.bot.get_file(document.file_id)
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
             await file.download_to_drive(tmp.name)
             input_path = tmp.name
 
-        # Анализ (синхронно!)
         report_date, text_report, df_result = analyze_excel(input_path)
 
-        # Подготовить имя файла
-        safe_date = report_date.replace("/", "-").replace(":", "-")
+        # Подготовка имени файла
+        safe_date = "".join(c if c.isalnum() else "_" for c in report_date)
         output_filename = f"Анализ_отчёта_{safe_date}.xlsx"
         output_path = os.path.join(tempfile.gettempdir(), output_filename)
         df_result.to_excel(output_path)
 
-        # Отправить текст (если помещается)
-        if len(text_report) < 4000:
+        # Отправка текста (если помещается)
+        if len(text_report) <= 4090:
             await update.message.reply_text(text_report)
         else:
-            await update.message.reply_text("Отчёт слишком длинный для текста. Смотрите Excel-файл.")
+            await update.message.reply_text("📋 Отчёт слишком длинный для текста. Полная версия — в файле.")
 
-        # Отправить Excel
+        # Всегда отправляем Excel
         with open(output_path, 'rb') as f:
             await update.message.reply_document(document=f, filename=output_filename)
 
-        # Удалить временные файлы
+        # Очистка
         os.unlink(input_path)
         os.unlink(output_path)
 
     except Exception as e:
-        logging.exception("Ошибка при обработке файла")
-        await update.message.reply_text(f"❌ Ошибка обработки:\n{str(e)[:1000]}")
+        logging.exception("Ошибка")
+        await update.message.reply_text(f"❌ Ошибка:\n{str(e)[:1000]}")
 
 
 def main():
-    logging.basicConfig(
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.INFO
-    )
-
+    logging.basicConfig(level=logging.INFO)
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Обработчики
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.MimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_document))
     app.add_handler(MessageHandler(filters.Document.FileExtension("xlsx"), handle_document))
 
-    print("✅ Бот запущен и ожидает файлы...")
+    print("✅ Бот запущен!")
     app.run_polling()
 
 
