@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # === НАСТРОЙКИ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ ===
-BOT_TOKEN = os.environ["7109998838:AAGQmN8QyX9wZBI8TPZ0xIvWGHNS8ZA8UXA"]
+BOT_TOKEN = os.environ["BOT_TOKEN"]
 AUTHORIZED_IDS_STR = os.environ.get("AUTHORIZED_IDS", "")
 AUTHORIZED_USER_IDS = set(map(int, AUTHORIZED_IDS_STR.split(","))) if AUTHORIZED_IDS_STR else set()
 
@@ -173,4 +173,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
