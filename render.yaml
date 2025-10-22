@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: cafe-report-bot
+    env: python
+    region: frankfurt
+    buildCommand: ""
+    startCommand: python excel.py
+    envVars:
+      - key: BOT_TOKEN
+        fromSecret: true
+      - key: AUTHORIZED_IDS
+        fromSecret: true
+    runtime: python-3.11.9
