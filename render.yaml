@@ -7,7 +7,7 @@ services:
     startCommand: python excel.py
     envVars:
       - key: BOT_TOKEN
-        fromSecret: true
+        sync: false
       - key: AUTHORIZED_IDS
-        fromSecret: true
-    runtime: python-3.11.9
+        sync: false
+    runtime: python-3.11
